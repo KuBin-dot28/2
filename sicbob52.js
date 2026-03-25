@@ -1375,7 +1375,7 @@ app.get("/api/sicbo/b52", async () => {
     
     if (!last_result || !current_prediction) {
         return {
-            "id": "GiaThinhzZz Sicbo B52",
+            "id": "KuBinDev Sicbo B52",
             "phien_truoc": null,
             "xuc_xac1": null,
             "xuc_xac2": null,
