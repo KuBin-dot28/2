@@ -19,7 +19,7 @@ from flask import Flask, send_file, jsonify
 from threading import Thread, Lock
 
 # ---------- Cấu hình ----------
-API_URL = "https://wtxmd52.tele68.com/v1/txmd5/lite-sessions?cp=R&cl=R&pf=web&at=1cc145815dbbe5007e9ce49a8cf0c95f"
+API_URL = "https://wtxmd52.tele68.com/v1/txmd5/sessions"
 POLL_INTERVAL = 6        # seconds between polls
 HISTORY_LEN = 200        # lưu đủ dài để Markov có dữ liệu
 LC79_FILE = "lc79.json"
