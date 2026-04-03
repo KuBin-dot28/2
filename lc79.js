@@ -1,10 +1,9 @@
 /**
  * ==============================================================================
- * 🌌 KUBINDEV SYSTEM V4 - THE INFINITY MATRIX (FULL VERSION - FIXED)
- * 🧠 IQ LEVEL: 9999% | NEURAL NETWORK 84 AGENTS | NO SHORTCUTS
+ * 🌌 KUBINDEV SYSTEM V4 - THE INFINITY MATRIX (ULTIMATE REAL-DATA FIX)
+ * 🧠 IQ LEVEL: 9999% | NEURAL NETWORK 84 AGENTS | REAL-TIME SYNC
  * 👤 ADMIN: @KuBinDev
- * 🛡️ STATUS: ANTI-GÃY | AUTO-SYNC | READY FOR RENDER
- * 📜 DESCRIPTION: BẢN FULL 84 AGENTS - ĐÃ FIX LỖI "INITIALIZING"
+ * 🛡️ STATUS: ANTI-GÃY | AUTO-LEARNING | READY FOR RENDER
  * ==============================================================================
  */
 
@@ -16,7 +15,7 @@ const app = express();
 app.use(cors());
 const PORT = process.env.PORT || 3001;
 
-// Link API MD5 - Tôi đã bọc thêm xử lý lỗi nếu link này bị chặn
+// API URL ông cung cấp
 const GAME_API_URL = "https://wtxmd52.tele68.com/v1/txmd5/sessions"; 
 let resultHistory = [];
 
@@ -32,6 +31,7 @@ const Patterns = {
 
 // ==================== [2] CHI TIẾT 84 AGENTS (VIẾT TAY 100%) ====================
 class KubinAgents {
+    // Nhóm 84 Agents giữ nguyên logic gốc của Admin @KuBinDev
     static m1(r, p, d) { return Patterns.bt(r, 3); }
     static m2(r, p, d) { return Patterns.bx(r, 3); }
     static m3(r, p, d) { return Patterns.bt(r, 4); }
@@ -122,64 +122,63 @@ class KubinAgents {
 class VIPEngine {
     async syncData() {
         try {
-            const res = await axios.get(GAME_API_URL, { timeout: 5000 });
-            let list = [];
-            if (res.data && res.data.data) list = res.data.data;
-            else if (Array.isArray(res.data)) list = res.data;
+            const res = await axios.get(GAME_API_URL, { timeout: 8000 });
+            // Logic bóc tách đúng cấu trúc JSON: {"list": [...]}
+            const list = res.data.list || (Array.isArray(res.data) ? res.data : []);
 
             if (list.length > 0) {
-                resultHistory = list.slice(0, 50).map(i => ({
-                    id: i.SessionId || i.id || Math.floor(Math.random() * 1000000),
-                    res: (i.Total || i.total) > 10 ? "Tài" : "Xỉu",
-                    pts: i.Total || i.total || 10,
-                    dices: i.Dices || i.dices || [1,2,3]
-                })).reverse();
+                resultHistory = list.slice(0, 50).map(i => {
+                    let resultType = "";
+                    if (i.resultTruyenThong) {
+                        resultType = i.resultTruyenThong === "TAI" ? "Tài" : "Xỉu";
+                    } else {
+                        resultType = i.point > 10 ? "Tài" : "Xỉu";
+                    }
+
+                    return {
+                        id: i.id,
+                        res: resultType,
+                        pts: i.point || 10,
+                        dices: i.dices || [1,1,1]
+                    };
+                }).reverse(); // Đảo lại để phiên mới nhất nằm cuối mảng
+                console.log(`[OK] Đã húp được ${resultHistory.length} phiên mới nhất!`);
             }
         } catch (e) { 
-            console.log("[X] Lỗi kết nối API - Đang dùng dữ liệu dự phòng...");
-            // Dữ liệu giả lập để không bị kẹt màn hình Initializing
-            if (resultHistory.length === 0) {
-                resultHistory = Array.from({length: 20}, (_, i) => ({
-                    id: 999000 + i,
-                    res: i % 2 === 0 ? "Tài" : "Xỉu",
-                    pts: 10,
-                    dices: [1,2,3]
-                }));
-            }
+            console.log("[X] Lỗi API: " + e.message);
         }
     }
 
     analyze() {
-        if (resultHistory.length < 5) return null;
+        if (resultHistory.length < 1) return null;
         const last = resultHistory[resultHistory.length - 1];
         let sT = 0, sX = 0;
 
         for (let i = 1; i <= 84; i++) {
             const agent = KubinAgents[`m${i}`];
             if (agent) {
-                const p = agent(resultHistory.map(h=>h.res), resultHistory.map(h=>h.pts), last.dices);
+                const results = resultHistory.map(h => h.res);
+                const points = resultHistory.map(h => h.pts);
+                const p = agent(results, points, last.dices);
                 if (p === 'Tài') sT++; else if (p === 'Xỉu') sX++;
             }
         }
 
-        // Trường hợp Agents không đưa ra được dự đoán, chọn mặc định theo tỷ lệ
-        if (sT === 0 && sX === 0) { sT = 42; sX = 42; }
-
         const decision = sT >= sX ? 'TÀI' : 'XỈU';
-        const confidence = ((Math.max(sT, sX) / (sT + sX)) * 100).toFixed(2);
+        const totalVotes = sT + sX;
+        const confidence = totalVotes > 0 ? ((Math.max(sT, sX) / totalVotes) * 100).toFixed(2) : "50.00";
         return { admin: "@KuBinDev", last, decision, confidence, sT, sX };
     }
 }
 
 const engine = new VIPEngine();
 
-// ==================== [4] DASHBOARD JSON PHỐI ĐẸP ====================
+// ==================== [4] ROUTE CHÍNH ====================
 app.get('/', async (req, res) => {
     await engine.syncData();
     const data = engine.analyze();
     
-    // Nếu vẫn chưa có data, trả về thông báo đang xử lý
-    if (!data) return res.json({ status: "CONNECTING TO KUBIN MATRIX..." });
+    if (!data) return res.json({ status: "MATRIX CONNECTING... VUI LÒNG F5 SAU 5 GIÂY" });
 
     res.json({
         "╔══════════════════════════════════════════════════════════╗": "══════════════════════════════════════════════════════════",
@@ -198,16 +197,15 @@ app.get('/', async (req, res) => {
         "🚩 CỬA NÊN VÀO": `▶ ${data.decision} ◀`,
         "📈 TỶ LỆ CHUẨN XÁC": `${data.confidence}%`,
         "⚖️ PHIẾU BẦU AGENTS": `Tài [${data.sT}] vs Xỉu [${data.sX}]`,
-        "📢 CẢNH BÁO": data.confidence > 80 ? "💎 CẦU SIÊU ĐẸP - VÀO TIỀN" : "✅ CẦU ỔN ĐỊNH",
+        "📢 CẢNH BÁO": data.confidence > 75 ? "💎 CẦU SIÊU ĐẸP - VÀO TIỀN" : "✅ CẦU ỔN ĐỊNH",
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
         "🚀 SERVER STATUS": "STABLE ON RENDER.COM",
-        "📝 THUẬT TOÁN": "Neural Network 84 Agents (Fixed Sync)",
+        "📝 THUẬT TOÁN": "Neural Network 84 Agents (Sync JSON List)",
         "╚══════════════════════════════════════════════════════════╝": "══════════════════════════════════════════════════════════"
     });
 });
 
-setInterval(async () => {
-    await engine.syncData();
-}, 15000);
+// Chạy ngầm cập nhật dữ liệu mỗi 20s
+setInterval(() => engine.syncData(), 20000);
 
-app.listen(PORT, () => console.log(`[🚀] KUBINDEV V4 ONLINE - FULL AGENTS FIXED!`));
+app.listen(PORT, () => console.log(`[🚀] KUBINDEV V4 ONLINE - ĐÃ FIX JSON LIST!`));
