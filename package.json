@@ -1,29 +1,15 @@
 {
-  "name": "sicbo-b52-ai-predictor",
-  "version": "1.0.0",
-  "description": "AI Predictor for Sicbo using Fastify and various machine learning algorithms (Markov, N-Gram, Pattern Recognition, Ensemble).",
-  "main": "sicbob52.js",
-  "type": "module",
+  "name": "kubindev-system-v4",
+  "version": "4.0.0",
+  "description": "Hệ thống phân tích Tài Xỉu 84 Agents",
+  "main": "index.js",
   "scripts": {
-    "start": "node sicbob52.js",
-    "dev": "node --watch sicbob52.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
-  "keywords": [
-    "sicbo",
-    "fastify",
-    "node.js",
-    "ai",
-    "prediction",
-    "ensemble"
-  ],
-  "author": "KuBinDev",
-  "license": "ISC",
   "dependencies": {
-    "@fastify/cors": "^8.5.0",
-    "fastify": "^4.25.2",
-    "node-fetch": "^3.3.2"
-  },
-  "devDependencies": {
-    "node": ">=18.0.0"
+    "axios": "^1.6.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
   }
 }
