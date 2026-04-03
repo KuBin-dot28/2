@@ -1,15 +1,14 @@
 {
   "name": "kubindev-system-v4",
   "version": "4.0.0",
-  "description": "Hệ thống phân tích Tài Xỉu 84 Agents",
-  "main": "index.js",
+  "description": "84 Agents Neural Network by KuBinDev",
+  "main": "lc79.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node lc79.js"
   },
   "dependencies": {
+    "express": "^4.18.2",
     "axios": "^1.6.0",
-    "cors": "^2.8.5",
-    "express": "^4.18.2"
+    "cors": "^2.8.5"
   }
 }
