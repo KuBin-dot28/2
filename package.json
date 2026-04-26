@@ -2,7 +2,7 @@
   "name": "tool-tx-lc79",
   "version": "1.0.0",
   "description": "API Dự đoán Tài Xỉu MD5",
-  "main": 'lc79.js",
+  "main": "lc79.js",
   "type": "module",
   "scripts": {
     "start": "node \"lc79.js\"",
