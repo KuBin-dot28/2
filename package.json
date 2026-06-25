@@ -1,16 +1,14 @@
 {
-  "name": "tool-tx-lc79",
+  "name": "baccarat-api",
   "version": "1.0.0",
-  "description": "API Dự đoán Tài Xỉu MD5",
-  "main": "lc79.js",
-  "type": "module",
+  "description": "Baccarat API Server",
+  "main": "Bcr.js",
   "scripts": {
-    "start": "node \"lc79.js\"",
-    "dev": "nodemon \"lc79.js\""
+    "start": "node Bcr.js",
+    "dev": "node Bcr.js"
   },
   "dependencies": {
-    "fastify": "^4.24.0",
-    "@fastify/cors": "^8.4.0",
-    "node-fetch": "^3.3.2"
+    "axios": "^1.11.0",
+    "express": "^5.1.0"
   }
 }
