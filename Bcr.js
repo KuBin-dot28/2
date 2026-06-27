@@ -243,128 +243,275 @@ function sleep(ms) {
 }
 
 // ======================
-// THUẬT TOÁN DỰ ĐOÁN GIỐNG BẢN PYTHON CŨ
+// THUẬT TOÁN DỰ ĐOÁN ỔN ĐỊNH HƠN
+// Chỉ sửa phần thuật toán, các phần khác giữ nguyên
 // ======================
 class UnifiedBaccaratPredictor {
     constructor() {
         this.history = [];
+
+        // Cấu hình ổn định:
+        // - Chỉ dùng dữ liệu gần để tránh dữ liệu quá cũ kéo lệch.
+        // - Giới hạn xác suất để tránh báo quá chắc.
+        // - Có NEUTRAL khi tín hiệu yếu.
+        this.maxLookback = 60;
+        this.minNonTie = 8;
+        this.bankerBase = 0.506;
     }
 
     addResult(result) {
-        if (!['B', 'P', 'T'].includes(result)) return false;
-        this.history.push(result);
+        const r = String(result || '').trim().toUpperCase();
+
+        if (!['B', 'P', 'T'].includes(r)) return false;
+
+        this.history.push(r);
+
+        // Giữ history vừa đủ, tránh phình bộ nhớ và tránh nhiễu quá xa.
+        if (this.history.length > 160) {
+            this.history = this.history.slice(-160);
+        }
+
         return true;
     }
 
+    clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    getNonTieHistory(limit = null) {
+        const nonTies = this.history.filter(r => r === 'B' || r === 'P');
+        return limit ? nonTies.slice(-limit) : nonTies;
+    }
+
     getLastNonTie() {
-        for (let i = this.history.length - 1; i >= 0; i--) {
-            if (this.history[i] !== 'T') return this.history[i];
-        }
-        return 'B';
+        const nonTies = this.getNonTieHistory();
+
+        if (!nonTies.length) return 'B';
+
+        return nonTies[nonTies.length - 1];
+    }
+
+    getTieRate(limit = 30) {
+        const recent = this.history.slice(-limit);
+
+        if (!recent.length) return 0;
+
+        const ties = recent.filter(r => r === 'T').length;
+        return ties / recent.length;
+    }
+
+    smoothProbability(bankerCount, totalCount, prior = this.bankerBase, strength = 12) {
+        if (totalCount <= 0) return prior;
+
+        return ((prior * strength) + bankerCount) / (strength + totalCount);
+    }
+
+    calculateFrequencyScore() {
+        const recentLong = this.getNonTieHistory(36);
+        const recentShort = this.getNonTieHistory(14);
+
+        const bLong = recentLong.filter(r => r === 'B').length;
+        const bShort = recentShort.filter(r => r === 'B').length;
+
+        const longProb = this.smoothProbability(bLong, recentLong.length, this.bankerBase, 14);
+        const shortProb = this.smoothProbability(bShort, recentShort.length, this.bankerBase, 18);
+
+        // Trộn cửa sổ dài và ngắn để giảm nhảy dự đoán.
+        const bankerProb = (longProb * 0.65) + (shortProb * 0.35);
+
+        return {
+            B: bankerProb,
+            P: 1 - bankerProb
+        };
     }
 
     calculateStreakScore() {
-        let bStreak = 0;
-        let pStreak = 0;
+        const nonTies = this.getNonTieHistory(30);
 
-        for (let i = this.history.length - 1; i >= 0; i--) {
-            const r = this.history[i];
-
-            if (r === 'B') bStreak++;
-            else if (r === 'P') pStreak++;
-            else break;
+        if (nonTies.length < 3) {
+            return {
+                B: this.bankerBase,
+                P: 1 - this.bankerBase
+            };
         }
 
-        const maxStreak = Math.max(bStreak, pStreak);
-        const score = Math.min(maxStreak * 0.25, 1.0);
-        const last = this.history.length ? this.history[this.history.length - 1] : 'B';
+        const last = nonTies[nonTies.length - 1];
+        let streak = 1;
+
+        for (let i = nonTies.length - 2; i >= 0; i--) {
+            if (nonTies[i] !== last) break;
+            streak++;
+        }
+
+        // Chuỗi chỉ cho tín hiệu nhẹ, không đẩy điểm quá mạnh.
+        let edge = 0;
+
+        if (streak === 2) edge = 0.025;
+        else if (streak === 3) edge = 0.04;
+        else if (streak === 4) edge = 0.045;
+        else if (streak >= 5) edge = 0.035;
+
+        const bankerProb = last === 'B'
+            ? 0.5 + edge
+            : 0.5 - edge;
 
         return {
-            B: last === 'B' ? score : 0,
-            P: last === 'P' ? score : 0
+            B: bankerProb,
+            P: 1 - bankerProb
         };
     }
 
     calculateChopScore() {
-        let chopCount = 0;
+        const recent = this.getNonTieHistory(14);
 
-        for (let i = this.history.length - 1; i > 0; i--) {
-            const curr = this.history[i];
-            const prev = this.history[i - 1];
+        if (recent.length < 6) {
+            return {
+                B: this.bankerBase,
+                P: 1 - this.bankerBase
+            };
+        }
 
-            if (curr !== 'T' && prev !== 'T' && curr !== prev) {
-                chopCount++;
-            } else {
-                break;
+        let changes = 0;
+
+        for (let i = 1; i < recent.length; i++) {
+            if (recent[i] !== recent[i - 1]) {
+                changes++;
             }
         }
 
-        const score = Math.min(chopCount * 0.3, 1.0);
-        const lastNonTie = this.getLastNonTie();
+        const chopRate = changes / (recent.length - 1);
+        const last = recent[recent.length - 1];
+
+        // Nếu đang đảo cầu nhiều thì nghiêng nhẹ sang bên ngược lại.
+        // Nếu không rõ thì giữ gần trung tính.
+        let bankerProb = this.bankerBase;
+
+        if (chopRate >= 0.7) {
+            bankerProb = last === 'B' ? 0.465 : 0.535;
+        } else if (chopRate <= 0.35) {
+            bankerProb = last === 'B' ? 0.53 : 0.47;
+        }
 
         return {
-            B: lastNonTie === 'P' ? score : 0,
-            P: lastNonTie === 'B' ? score : 0
+            B: bankerProb,
+            P: 1 - bankerProb
         };
     }
 
     calculateDerivedRoadsScore() {
-        const nonTies = this.history.filter(r => r !== 'T');
-        let regularity = 0.0;
+        const nonTies = this.getNonTieHistory(40);
+
+        if (nonTies.length < 8) {
+            return {
+                B: this.bankerBase,
+                P: 1 - this.bankerBase
+            };
+        }
+
+        let sameTwoBack = 0;
+        let total = 0;
 
         for (let i = 2; i < nonTies.length; i++) {
+            total++;
+
             if (nonTies[i] === nonTies[i - 2]) {
-                regularity += 0.5;
+                sameTwoBack++;
             }
         }
 
-        const regScore = nonTies.length
-            ? Math.min(regularity / (nonTies.length * 0.4), 1.0)
-            : 0.0;
+        const rate = total ? sameTwoBack / total : 0.5;
+        const last = nonTies[nonTies.length - 1];
+        const twoBack = nonTies[nonTies.length - 2];
 
-        const last = this.getLastNonTie();
+        let bankerProb = this.bankerBase;
 
-        if (last === 'B') {
-            return {
-                B: regScore,
-                P: (1 - regScore) * 0.6
-            };
+        // Dạng B-P-B-P nhiều: ưu tiên giống cách 2 ván.
+        if (rate >= 0.62) {
+            bankerProb = twoBack === 'B' ? 0.54 : 0.46;
         }
 
-        if (last === 'P') {
-            return {
-                B: (1 - regScore) * 0.6,
-                P: regScore
-            };
+        // Dạng cặp/chuỗi nhiều: ưu tiên nhẹ theo ván cuối.
+        else if (rate <= 0.38) {
+            bankerProb = last === 'B' ? 0.535 : 0.465;
         }
 
         return {
-            B: regScore,
-            P: (1 - regScore) * 0.6
+            B: bankerProb,
+            P: 1 - bankerProb
         };
     }
 
     calculatePatternScore() {
-        const last = this.getLastNonTie();
+        const nonTies = this.getNonTieHistory(this.maxLookback);
 
-        let scoreB = last === 'B' ? 0.6 : 0.4;
-        let scoreP = last === 'P' ? 0.6 : 0.4;
-
-        const recentTies = this.history.slice(-8).filter(r => r === 'T').length;
-
-        if (recentTies >= 2) {
-            scoreB += 0.15;
-            scoreP += 0.15;
+        if (nonTies.length < 12) {
+            return {
+                B: this.bankerBase,
+                P: 1 - this.bankerBase
+            };
         }
 
+        const sizes = [4, 3, 2];
+        let weightedBanker = 0;
+        let totalWeight = 0;
+
+        for (const size of sizes) {
+            if (nonTies.length <= size + 2) continue;
+
+            const currentPattern = nonTies.slice(-size).join('');
+            let bNext = 0;
+            let pNext = 0;
+
+            for (let i = 0; i <= nonTies.length - size - 2; i++) {
+                const oldPattern = nonTies.slice(i, i + size).join('');
+
+                if (oldPattern === currentPattern) {
+                    const next = nonTies[i + size];
+
+                    if (next === 'B') bNext++;
+                    else if (next === 'P') pNext++;
+                }
+            }
+
+            const total = bNext + pNext;
+
+            // Ít nhất 2 lần lặp mới tính, tránh bắt nhiễu.
+            if (total >= 2) {
+                const smoothProb = this.smoothProbability(bNext, total, this.bankerBase, 8);
+
+                let weight = 1.0;
+                if (size === 4) weight = 1.35;
+                else if (size === 3) weight = 1.1;
+                else if (size === 2) weight = 0.8;
+
+                // Nếu pattern quá lệch do số mẫu ít thì giảm tác động.
+                const sampleWeight = this.clamp(total / 5, 0.4, 1.0);
+                const finalWeight = weight * sampleWeight;
+
+                weightedBanker += smoothProb * finalWeight;
+                totalWeight += finalWeight;
+            }
+        }
+
+        if (!totalWeight) {
+            return {
+                B: this.bankerBase,
+                P: 1 - this.bankerBase
+            };
+        }
+
+        const bankerProb = weightedBanker / totalWeight;
+
         return {
-            B: scoreB,
-            P: scoreP
+            B: bankerProb,
+            P: 1 - bankerProb
         };
     }
 
     predict() {
-        if (this.history.length < 5) {
+        const nonTies = this.getNonTieHistory();
+
+        if (nonTies.length < this.minNonTie) {
             return {
                 recommendation: 'NEUTRAL',
                 confidence: 'YẾU',
@@ -373,53 +520,100 @@ class UnifiedBaccaratPredictor {
                 scoreB: 0,
                 scoreP: 0,
                 totalScore: 0,
-                reason: 'Chưa đủ dữ liệu (cần >= 5 kết quả)'
+                reason: `Chưa đủ dữ liệu ổn định (cần >= ${this.minNonTie} kết quả B/P)`
             };
         }
 
-        const weight = 25;
-        let scoreB = 0.0;
-        let scoreP = 0.0;
+        const signals = [
+            {
+                name: 'Tần suất',
+                value: this.calculateFrequencyScore(),
+                weight: 0.32
+            },
+            {
+                name: 'Chuỗi',
+                value: this.calculateStreakScore(),
+                weight: 0.18
+            },
+            {
+                name: 'Đảo cầu',
+                value: this.calculateChopScore(),
+                weight: 0.16
+            },
+            {
+                name: 'Nhịp cầu',
+                value: this.calculateDerivedRoadsScore(),
+                weight: 0.16
+            },
+            {
+                name: 'Mẫu lặp',
+                value: this.calculatePatternScore(),
+                weight: 0.18
+            }
+        ];
 
-        const streak = this.calculateStreakScore();
-        scoreB += streak.B * weight;
-        scoreP += streak.P * weight;
+        let bankerProb = 0;
+        let totalWeight = 0;
 
-        const chop = this.calculateChopScore();
-        scoreB += chop.B * weight;
-        scoreP += chop.P * weight;
+        for (const signal of signals) {
+            bankerProb += signal.value.B * signal.weight;
+            totalWeight += signal.weight;
+        }
 
-        const derived = this.calculateDerivedRoadsScore();
-        scoreB += derived.B * weight;
-        scoreP += derived.P * weight;
+        bankerProb = totalWeight > 0 ? bankerProb / totalWeight : this.bankerBase;
 
-        const pattern = this.calculatePatternScore();
-        scoreB += pattern.B * weight;
-        scoreP += pattern.P * weight;
+        // Kéo xác suất về 50 để ổn định hơn, tránh tự tin ảo.
+        const shrink = 0.72;
+        bankerProb = 0.5 + ((bankerProb - 0.5) * shrink);
 
-        scoreB += 8;
+        // Nếu Hoà xuất hiện nhiều gần đây thì giảm độ lệch về 50.
+        const tieRate = this.getTieRate(30);
+        if (tieRate >= 0.1) {
+            const tieShrink = this.clamp(1 - tieRate, 0.78, 0.95);
+            bankerProb = 0.5 + ((bankerProb - 0.5) * tieShrink);
+        }
 
-        const total = scoreB + scoreP;
-        const bankerProb = total > 0 ? Math.round((scoreB / total) * 100) : 50;
-        const playerProb = 100 - bankerProb;
+        // Baccarat không nên hiển thị xác suất quá cao.
+        bankerProb = this.clamp(bankerProb, 0.43, 0.57);
 
-        const diff = Math.abs(scoreB - scoreP);
+        const playerProb = 1 - bankerProb;
+        const bankerPercent = Math.round(bankerProb * 100);
+        const playerPercent = 100 - bankerPercent;
 
+        const edge = Math.abs(bankerProb - 0.5);
+
+        let recommendation = 'NEUTRAL';
         let confidence = 'YẾU';
-        if (diff > 80) confidence = 'RẤT MẠNH';
-        else if (diff > 50) confidence = 'MẠNH';
-        else if (diff > 25) confidence = 'TRUNG BÌNH';
 
-        const recommendation = bankerProb > playerProb ? 'BANKER' : 'PLAYER';
+        // Khi tín hiệu yếu thì không ép chọn.
+        if (edge >= 0.018) {
+            recommendation = bankerProb > playerProb ? 'BANKER' : 'PLAYER';
+        }
+
+        if (edge >= 0.055) {
+            confidence = 'MẠNH';
+        } else if (edge >= 0.035) {
+            confidence = 'TRUNG BÌNH';
+        } else {
+            confidence = 'YẾU';
+        }
+
+        const scoreB = Math.round(bankerProb * 1000);
+        const scoreP = Math.round(playerProb * 1000);
+
+        const reason = signals.map(signal => {
+            return `${signal.name}:B${Math.round(signal.value.B * 100)}-P${Math.round(signal.value.P * 100)}`;
+        }).join(' | ');
 
         return {
             recommendation,
             confidence,
-            bankerProb,
-            playerProb,
-            scoreB: Math.round(scoreB),
-            scoreP: Math.round(scoreP),
-            totalScore: Math.round(total)
+            bankerProb: bankerPercent,
+            playerProb: playerPercent,
+            scoreB,
+            scoreP,
+            totalScore: scoreB + scoreP,
+            reason
         };
     }
 }
