@@ -244,18 +244,15 @@ function sleep(ms) {
 
 // ======================
 // THUẬT TOÁN DỰ ĐOÁN ỔN ĐỊNH HƠN
-// Chỉ sửa phần thuật toán, các phần khác giữ nguyên
+// Chỉ sửa thuật toán dự đoán
 // ======================
 class UnifiedBaccaratPredictor {
     constructor() {
         this.history = [];
 
-        // Cấu hình ổn định:
-        // - Chỉ dùng dữ liệu gần để tránh dữ liệu quá cũ kéo lệch.
-        // - Giới hạn xác suất để tránh báo quá chắc.
-        // - Có NEUTRAL khi tín hiệu yếu.
+        // Giữ thuật toán ổn định hơn nhưng không để bàn nào cũng NEUTRAL
         this.maxLookback = 60;
-        this.minNonTie = 8;
+        this.minNonTie = 5;
         this.bankerBase = 0.506;
     }
 
@@ -266,7 +263,6 @@ class UnifiedBaccaratPredictor {
 
         this.history.push(r);
 
-        // Giữ history vừa đủ, tránh phình bộ nhớ và tránh nhiễu quá xa.
         if (this.history.length > 160) {
             this.history = this.history.slice(-160);
         }
@@ -316,7 +312,6 @@ class UnifiedBaccaratPredictor {
         const longProb = this.smoothProbability(bLong, recentLong.length, this.bankerBase, 14);
         const shortProb = this.smoothProbability(bShort, recentShort.length, this.bankerBase, 18);
 
-        // Trộn cửa sổ dài và ngắn để giảm nhảy dự đoán.
         const bankerProb = (longProb * 0.65) + (shortProb * 0.35);
 
         return {
@@ -343,7 +338,6 @@ class UnifiedBaccaratPredictor {
             streak++;
         }
 
-        // Chuỗi chỉ cho tín hiệu nhẹ, không đẩy điểm quá mạnh.
         let edge = 0;
 
         if (streak === 2) edge = 0.025;
@@ -382,8 +376,6 @@ class UnifiedBaccaratPredictor {
         const chopRate = changes / (recent.length - 1);
         const last = recent[recent.length - 1];
 
-        // Nếu đang đảo cầu nhiều thì nghiêng nhẹ sang bên ngược lại.
-        // Nếu không rõ thì giữ gần trung tính.
         let bankerProb = this.bankerBase;
 
         if (chopRate >= 0.7) {
@@ -425,13 +417,9 @@ class UnifiedBaccaratPredictor {
 
         let bankerProb = this.bankerBase;
 
-        // Dạng B-P-B-P nhiều: ưu tiên giống cách 2 ván.
         if (rate >= 0.62) {
             bankerProb = twoBack === 'B' ? 0.54 : 0.46;
-        }
-
-        // Dạng cặp/chuỗi nhiều: ưu tiên nhẹ theo ván cuối.
-        else if (rate <= 0.38) {
+        } else if (rate <= 0.38) {
             bankerProb = last === 'B' ? 0.535 : 0.465;
         }
 
@@ -475,7 +463,6 @@ class UnifiedBaccaratPredictor {
 
             const total = bNext + pNext;
 
-            // Ít nhất 2 lần lặp mới tính, tránh bắt nhiễu.
             if (total >= 2) {
                 const smoothProb = this.smoothProbability(bNext, total, this.bankerBase, 8);
 
@@ -484,7 +471,6 @@ class UnifiedBaccaratPredictor {
                 else if (size === 3) weight = 1.1;
                 else if (size === 2) weight = 0.8;
 
-                // Nếu pattern quá lệch do số mẫu ít thì giảm tác động.
                 const sampleWeight = this.clamp(total / 5, 0.4, 1.0);
                 const finalWeight = weight * sampleWeight;
 
@@ -562,18 +548,18 @@ class UnifiedBaccaratPredictor {
 
         bankerProb = totalWeight > 0 ? bankerProb / totalWeight : this.bankerBase;
 
-        // Kéo xác suất về 50 để ổn định hơn, tránh tự tin ảo.
+        // Làm mượt xác suất để dự đoán ổn định hơn
         const shrink = 0.72;
         bankerProb = 0.5 + ((bankerProb - 0.5) * shrink);
 
-        // Nếu Hoà xuất hiện nhiều gần đây thì giảm độ lệch về 50.
+        // Nếu Hoà gần đây nhiều thì giảm độ lệch, nhưng không kéo quá mạnh về NEUTRAL
         const tieRate = this.getTieRate(30);
         if (tieRate >= 0.1) {
-            const tieShrink = this.clamp(1 - tieRate, 0.78, 0.95);
+            const tieShrink = this.clamp(1 - tieRate, 0.82, 0.96);
             bankerProb = 0.5 + ((bankerProb - 0.5) * tieShrink);
         }
 
-        // Baccarat không nên hiển thị xác suất quá cao.
+        // Không cho xác suất quá ảo
         bankerProb = this.clamp(bankerProb, 0.43, 0.57);
 
         const playerProb = 1 - bankerProb;
@@ -582,17 +568,18 @@ class UnifiedBaccaratPredictor {
 
         const edge = Math.abs(bankerProb - 0.5);
 
-        let recommendation = 'NEUTRAL';
+        // Sửa lỗi bàn nào cũng NEUTRAL:
+        // Mặc định vẫn chọn BANKER/PLAYER, chỉ NEUTRAL khi cực sát 50/50.
+        let recommendation = bankerProb >= playerProb ? 'BANKER' : 'PLAYER';
         let confidence = 'YẾU';
 
-        // Khi tín hiệu yếu thì không ép chọn.
-        if (edge >= 0.018) {
-            recommendation = bankerProb > playerProb ? 'BANKER' : 'PLAYER';
+        if (edge < 0.006) {
+            recommendation = 'NEUTRAL';
         }
 
-        if (edge >= 0.055) {
+        if (edge >= 0.05) {
             confidence = 'MẠNH';
-        } else if (edge >= 0.035) {
+        } else if (edge >= 0.025) {
             confidence = 'TRUNG BÌNH';
         } else {
             confidence = 'YẾU';
@@ -732,7 +719,9 @@ function makePredictionForLocalTable(tableId) {
     const tieRecent = [...recent].filter(ch => ch === 'T').length;
     const tieFlag = recent.length > 0 && tieRecent / recent.length >= 0.1 && resultStr.length >= 10;
 
-    const dudoanStr = tieFlag
+    // Chỉ thêm "+ Hoà" khi dự đoán là BANKER hoặc PLAYER.
+    // Không còn "NEUTRAL + Hoà".
+    const dudoanStr = tieFlag && prediction.recommendation !== 'NEUTRAL'
         ? `${prediction.recommendation} + Hoà`
         : prediction.recommendation;
 
